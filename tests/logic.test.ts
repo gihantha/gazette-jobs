@@ -293,3 +293,38 @@ test("does not treat 'Applications' text as an Apply button", () => {
   const html = `<a href="https://elsewhere.test/">Download Applications</a>`;
   assert.equal(extractApplyUrl(html, PAGE), null);
 });
+
+// ------------------------------------------------------------------ calendar
+
+import { buildIcs } from "../lib/calendar";
+
+test("builds an all-day event on the closing date, ending the next day", () => {
+  const ics = buildIcs(
+    vacancy({ id: "govdoc:9", title: "Audit Officer", institution: "Audit Commission", closingDate: "2026-10-31" }),
+    new Date("2026-10-22T10:00:00Z"),
+  )!;
+  assert.match(ics, /DTSTART;VALUE=DATE:20261031\r\n/);
+  assert.match(ics, /DTEND;VALUE=DATE:20261101\r\n/); // exclusive end, crosses the month
+  assert.match(ics, /DTSTAMP:20261022T100000Z\r\n/);
+  assert.match(ics, /UID:govdoc_9@gazette-jobs\r\n/);
+  assert.ok(ics.startsWith("BEGIN:VCALENDAR") && ics.endsWith("END:VCALENDAR\r\n"));
+});
+
+test("rolls the end date over a year boundary", () => {
+  const ics = buildIcs(vacancy({ closingDate: "2026-12-31" }))!;
+  assert.match(ics, /DTEND;VALUE=DATE:20270101\r\n/);
+});
+
+test("gives no calendar file when there is no deadline", () => {
+  assert.equal(buildIcs(vacancy({ closingDate: null })), null);
+});
+
+test("escapes commas and semicolons and folds long lines", () => {
+  const ics = buildIcs(
+    vacancy({ title: "Clerk, Typist; Driver", institution: "X".repeat(120) }),
+  )!;
+  assert.ok(ics.includes(String.raw`SUMMARY:Closing: Clerk\, Typist\; Driver`));
+  for (const line of ics.split("\r\n")) {
+    assert.ok(new TextEncoder().encode(line).length <= 75, `line too long: ${line}`);
+  }
+});

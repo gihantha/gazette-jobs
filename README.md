@@ -32,7 +32,7 @@ Useful commands:
 ```bash
 npm run scrape          # scrape once, print a report, touch nothing
 npm run scrape -- --json # dump the normalised vacancies as JSON
-npm test                # 31 tests over the date, exam, dedupe and apply-link logic
+npm test                # 35 tests over the date, exam, dedupe, apply-link and calendar logic
 npm run typecheck
 ```
 
@@ -98,6 +98,17 @@ link as `applyUrl`. The UI shows an "Apply online" chip and filter for them.
   refreshes after a deploy (~35 s per refresh, inside the 60 s `maxDuration`).
 - The enrichment runs *outside* the tagged `vacancies` cache on purpose: inside it, the
   daily `revalidateTag` would also discard every stored link.
+
+### Saved jobs and calendar
+
+Each row has a star and a calendar button. Both work entirely in the browser, so they cost
+nothing to run and need no account or database:
+
+- **Saved jobs** are kept in `localStorage` (`app/useSavedJobs.ts`) and are
+  per browser — they do not follow the user to another device. A saved post that closes
+  simply stops appearing.
+- **Add to calendar** builds an all-day `.ics` event on the closing date with a reminder the
+  day before (`lib/calendar.ts`). Posts with no published deadline have no calendar button.
 
 ### Open vs limited exams
 

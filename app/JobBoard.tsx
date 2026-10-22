@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import type { Vacancy } from "@/lib/types";
 import { daysUntil, formatDisplayDate } from "@/lib/dates";
+import { buildIcs } from "@/lib/calendar";
+import { useSavedJobs } from "./useSavedJobs";
 
 type ExamFilter = "all" | "any" | "open" | "limited";
 type WindowFilter = 0 | 3 | 7 | 30;
@@ -20,6 +22,8 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
   const [exam, setExam] = useState<ExamFilter>("all");
   const [win, setWin] = useState<WindowFilter>(0);
   const [onlineOnly, setOnlineOnly] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(false);
+  const { saved, toggle } = useSavedJobs();
 
   const stats = useMemo(() => {
     const dated = vacancies.filter((v) => v.closingDate);
@@ -39,6 +43,7 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
       if (exam === "limited" && v.examStream !== "limited") return false;
 
       if (onlineOnly && !v.applyUrl) return false;
+      if (savedOnly && !saved.has(v.id)) return false;
 
       if (win > 0) {
         if (!v.closingDate) return false;
@@ -51,7 +56,14 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
       }
       return true;
     });
-  }, [vacancies, query, exam, win, onlineOnly, today]);
+  }, [vacancies, query, exam, win, onlineOnly, savedOnly, saved, today]);
+
+  // Saved ids can outlive their vacancy (it closed or was delisted), so count
+  // only the ones still on the board.
+  const savedCount = useMemo(
+    () => vacancies.filter((v) => saved.has(v.id)).length,
+    [vacancies, saved],
+  );
 
   const groups = useMemo(() => groupByUrgency(filtered, today), [filtered, today]);
 
@@ -163,11 +175,22 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
             Apply online
           </button>
         </div>
+
+        <div className="segmented" role="group" aria-label="Saved jobs">
+          <button type="button" aria-pressed={!savedOnly} onClick={() => setSavedOnly(false)}>
+            All jobs
+          </button>
+          <button type="button" aria-pressed={savedOnly} onClick={() => setSavedOnly(true)}>
+            Saved ({savedCount})
+          </button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
         <div className="empty">
-          No vacancies match those filters.
+          {savedOnly && savedCount === 0
+            ? "Nothing saved yet. Tap the star on a post to keep it here — saved posts stay in this browser only."
+            : "No vacancies match those filters."}
           {query && " Try a shorter search term."}
         </div>
       ) : (
@@ -181,33 +204,62 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
             </div>
             <div className="rows">
               {g.items.map((v) => (
-                <a
-                  className="row"
-                  key={v.id}
-                  href={v.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <div className="row-main">
-                    <span className="row-title">{v.title}</span>
-                    <div className="row-sub">
-                      <span>{v.institution}</span>
-                      {v.examStream === "open" && <span className="chip open">Open exam</span>}
-                      {v.examStream === "limited" && (
-                        <span className="chip limited">Limited</span>
-                      )}
-                      {v.applyUrl && <span className="chip apply">Apply online</span>}
+                <div className="row" key={v.id}>
+                  <a className="row-link" href={v.url} target="_blank" rel="noopener noreferrer">
+                    <div className="row-main">
+                      <span className="row-title">{v.title}</span>
+                      <div className="row-sub">
+                        <span>{v.institution}</span>
+                        {v.examStream === "open" && <span className="chip open">Open exam</span>}
+                        {v.examStream === "limited" && (
+                          <span className="chip limited">Limited</span>
+                        )}
+                        {v.applyUrl && <span className="chip apply">Apply online</span>}
+                      </div>
                     </div>
+                    <div className="row-side">
+                      <div className="date">
+                        {v.closingDate ? formatDisplayDate(v.closingDate) : "No date published"}
+                      </div>
+                      <div>
+                        <Countdown closingDate={v.closingDate} today={today} />
+                      </div>
+                    </div>
+                  </a>
+                  <div className="row-actions">
+                    {v.applyUrl && (
+                      <a
+                        className="action apply-link"
+                        href={v.applyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Apply
+                      </a>
+                    )}
+                    {v.closingDate && (
+                      <button
+                        type="button"
+                        className="action"
+                        onClick={() => downloadIcs(v)}
+                        aria-label={`Add the ${v.title} deadline to your calendar`}
+                        title="Add deadline to calendar"
+                      >
+                        📅
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`action star${saved.has(v.id) ? " on" : ""}`}
+                      onClick={() => toggle(v.id)}
+                      aria-pressed={saved.has(v.id)}
+                      aria-label={`${saved.has(v.id) ? "Remove" : "Save"} ${v.title}`}
+                      title={saved.has(v.id) ? "Remove from saved" : "Save this post"}
+                    >
+                      {saved.has(v.id) ? "★" : "☆"}
+                    </button>
                   </div>
-                  <div className="row-side">
-                    <div className="date">
-                      {v.closingDate ? formatDisplayDate(v.closingDate) : "No date published"}
-                    </div>
-                    <div>
-                      <Countdown closingDate={v.closingDate} today={today} />
-                    </div>
-                  </div>
-                </a>
+                </div>
               ))}
             </div>
           </section>
@@ -229,7 +281,9 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
         </p>
         <p>
           &ldquo;Apply online&rdquo; appears only when the listing page has an application link.
-          Posts without it may still accept online applications — check the notice.
+          Posts without it may still accept online applications — check the notice. Saved
+          posts are stored in this browser only, so they will not follow you to another
+          device.
         </p>
         <p>
           These are third-party aggregators, not the official gazette. Always confirm the
@@ -243,6 +297,21 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
       </footer>
     </>
   );
+}
+
+/** Hand the browser an .ics file; the calendar app takes it from there. */
+function downloadIcs(v: Vacancy): void {
+  const ics = buildIcs(v);
+  if (!ics) return;
+
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${v.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50) || "deadline"}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function Countdown({ closingDate, today }: { closingDate: string | null; today: string }) {
