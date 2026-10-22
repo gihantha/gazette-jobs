@@ -357,3 +357,95 @@ test("job paths encode ids that contain colons and base64 padding", () => {
   assert.equal(jobPath("govdoc:9518"), "/jobs/govdoc%3A9518");
   assert.equal(jobPath("governmentjobs:lpygm6g="), "/jobs/governmentjobs%3Alpygm6g%3D");
 });
+
+// -------------------------------------------------------------------- health
+
+import { assessHealth } from "../lib/health";
+import { notifyTelegram } from "../lib/notify";
+import type { ScrapeReport, ScrapeResult } from "../lib/types";
+
+function result(over: Partial<ScrapeResult>): ScrapeResult {
+  return {
+    source: "govdoc",
+    vacancies: [vacancy({}), vacancy({}), vacancy({}), vacancy({})],
+    warnings: [],
+    durationMs: 1,
+    ...over,
+  };
+}
+
+function report(...results: ScrapeResult[]): ScrapeReport {
+  return {
+    startedAt: "", finishedAt: "", durationMs: 1, results, totalVacancies: 0, expiredDropped: 0,
+  };
+}
+
+test("a clean run is healthy", () => {
+  const h = assessHealth(report(result({ source: "govdoc" }), result({ source: "governmentjobs" })));
+  assert.deepEqual(h, { ok: true, problems: [] });
+});
+
+test("a source that threw is reported even when the other source is fine", () => {
+  const h = assessHealth(
+    report(result({ source: "govdoc", vacancies: [], error: "markup has probably changed" }), result({ source: "governmentjobs" })),
+  );
+  assert.equal(h.ok, false);
+  assert.equal(h.problems.length, 1);
+  assert.match(h.problems[0], /govdoc: failed — markup has probably changed/);
+});
+
+test("a source that 'succeeds' with zero vacancies is unhealthy", () => {
+  const h = assessHealth(report(result({ vacancies: [] })));
+  assert.equal(h.ok, false);
+  assert.match(h.problems[0], /returned 0 vacancies/);
+});
+
+test("mostly-unparseable cards are flagged, a few warnings are not", () => {
+  const few = assessHealth(report(result({ warnings: ["one odd date"] }))); // 1 per 4 = 0.25
+  assert.equal(few.ok, true);
+
+  const many = assessHealth(report(result({ warnings: ["a", "b"] }))); // 2 per 4 = 0.5
+  assert.equal(many.ok, false);
+  assert.match(many.problems[0], /2 parse warnings for 4 vacancies/);
+});
+
+test("telegram alert does nothing without configuration", async () => {
+  const saved = [process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID];
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_CHAT_ID;
+  const realFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = (async () => { called = true; return new Response("{}"); }) as typeof fetch;
+  try {
+    assert.equal(await notifyTelegram("hello"), false);
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (saved[0] !== undefined) process.env.TELEGRAM_BOT_TOKEN = saved[0];
+    if (saved[1] !== undefined) process.env.TELEGRAM_CHAT_ID = saved[1];
+  }
+});
+
+test("telegram alert posts the message, and never throws when the request fails", async () => {
+  process.env.TELEGRAM_BOT_TOKEN = "TESTTOKEN";
+  process.env.TELEGRAM_CHAT_ID = "42";
+  const realFetch = globalThis.fetch;
+  const calls: { url: string; body: string }[] = [];
+  try {
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url, body: String(init.body) });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    assert.equal(await notifyTelegram("x".repeat(5000)), true);
+    assert.equal(calls[0].url, "https://api.telegram.org/botTESTTOKEN/sendMessage");
+    assert.equal(JSON.parse(calls[0].body).text.length, 4000);
+    assert.equal(JSON.parse(calls[0].body).chat_id, "42");
+
+    globalThis.fetch = (async () => { throw new Error("network down https://api.telegram.org/botTESTTOKEN"); }) as typeof fetch;
+    assert.equal(await notifyTelegram("hi"), false);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_CHAT_ID;
+  }
+});

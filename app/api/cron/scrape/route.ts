@@ -8,6 +8,8 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { scrapeAll } from "@/lib/scrape";
+import { assessHealth } from "@/lib/health";
+import { notifyTelegram, telegramConfigured } from "@/lib/notify";
 import { hasDatabase, initSchema, pruneExpired, recordScrapeRun, upsertVacancies } from "@/lib/db";
 
 // The crawl is deliberately throttled and takes ~20s, so it needs more than
@@ -46,11 +48,23 @@ export async function GET(request: Request) {
   // Drop the cached live-scrape so the next request sees fresh rows.
   revalidateTag("vacancies");
 
-  const allSourcesFailed = report.results.every((r) => r.error);
+  const health = assessHealth(report);
+  let alerted = false;
+
+  if (!health.ok) {
+    console.error("[cron] scrape unhealthy:", health.problems);
+    // Runs once a day, so this is at most one message a day.
+    alerted = await notifyTelegram(
+      `Gazette Jobs: scrape problem\n\n${health.problems.map((p) => `• ${p}`).join("\n")}`,
+    );
+  }
 
   return NextResponse.json(
     {
-      ok: !allSourcesFailed && !dbError,
+      ok: health.ok && !dbError,
+      problems: health.problems,
+      alerted,
+      alertingConfigured: telegramConfigured,
       persisted: hasDatabase,
       saved,
       pruned,
@@ -58,7 +72,8 @@ export async function GET(request: Request) {
       ...report,
     },
     // Signal failure to Vercel's cron monitoring so a broken scrape is visible
-    // in the dashboard rather than silently returning 200.
-    { status: allSourcesFailed ? 500 : 200 },
+    // in the dashboard rather than silently returning 200. Any unhealthy source
+    // counts, not just all of them: one dead source already means missing jobs.
+    { status: health.ok ? 200 : 500 },
   );
 }

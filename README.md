@@ -32,7 +32,7 @@ Useful commands:
 ```bash
 npm run scrape          # scrape once, print a report, touch nothing
 npm run scrape -- --json # dump the normalised vacancies as JSON
-npm test                # 40 tests over the date, exam, dedupe, apply-link, calendar and filter logic
+npm test                # 46 tests over the date, exam, dedupe, apply-link, calendar, filter and health logic
 npm run typecheck
 ```
 
@@ -98,6 +98,22 @@ link as `applyUrl`. The UI shows an "Apply online" chip and filter for them.
   refreshes after a deploy (~35 s per refresh, inside the 60 s `maxDuration`).
 - The enrichment runs *outside* the tagged `vacancies` cache on purpose: inside it, the
   daily `revalidateTag` would also discard every stored link.
+
+### Scrape health alerts
+
+The scrapers read HTML we do not control, so the likely failure is silent: a redesign makes
+a scraper find nothing and the board quietly goes stale. After each daily cron run,
+`lib/health.ts` flags a source that **threw**, returned **zero vacancies**, or **failed to
+parse more than 30% of its cards**.
+
+- An unhealthy run returns **HTTP 500** from `/api/cron/scrape`, which shows as a failed run
+  in Vercel's cron log. (Before, only "every source failed" did.) The response lists
+  `problems`.
+- Optionally, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (see `.env.example`) to also
+  get a Telegram message — at most one a day. Unset, the alert is skipped and nothing else
+  changes.
+- It cannot notice a source that returns plausible-looking but wrong data, or a drop from
+  300 to 30 rows; with no database there is no previous run to compare against.
 
 ### Shareable links
 
