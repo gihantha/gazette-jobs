@@ -328,3 +328,32 @@ test("escapes commas and semicolons and folds long lines", () => {
     assert.ok(new TextEncoder().encode(line).length <= 75, `line too long: ${line}`);
   }
 });
+
+// ------------------------------------------------------------------- filters
+
+import { DEFAULT_FILTERS, filtersToSearch, parseFilters } from "../lib/filters";
+import { jobPath } from "../lib/site";
+
+test("default filters produce an empty query string", () => {
+  assert.equal(filtersToSearch(DEFAULT_FILTERS), "");
+});
+
+test("filters survive a round trip through the URL", () => {
+  const f = { q: "driver & clerk", exam: "open" as const, within: 7 as const, online: true };
+  assert.deepEqual(parseFilters(new URLSearchParams(filtersToSearch(f))), f);
+});
+
+test("unknown or tampered filter values fall back to defaults", () => {
+  const f = parseFilters(new URLSearchParams("exam=bogus&within=999&apply=nope&q="));
+  assert.deepEqual(f, DEFAULT_FILTERS);
+});
+
+test("an over-long search term is capped", () => {
+  const f = parseFilters(new URLSearchParams({ q: "x".repeat(500) }));
+  assert.equal(f.q.length, 100);
+});
+
+test("job paths encode ids that contain colons and base64 padding", () => {
+  assert.equal(jobPath("govdoc:9518"), "/jobs/govdoc%3A9518");
+  assert.equal(jobPath("governmentjobs:lpygm6g="), "/jobs/governmentjobs%3Alpygm6g%3D");
+});

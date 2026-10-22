@@ -32,7 +32,7 @@ Useful commands:
 ```bash
 npm run scrape          # scrape once, print a report, touch nothing
 npm run scrape -- --json # dump the normalised vacancies as JSON
-npm test                # 35 tests over the date, exam, dedupe, apply-link and calendar logic
+npm test                # 40 tests over the date, exam, dedupe, apply-link, calendar and filter logic
 npm run typecheck
 ```
 
@@ -98,6 +98,22 @@ link as `applyUrl`. The UI shows an "Apply online" chip and filter for them.
   refreshes after a deploy (~35 s per refresh, inside the 60 s `maxDuration`).
 - The enrichment runs *outside* the tagged `vacancies` cache on purpose: inside it, the
   daily `revalidateTag` would also discard every stored link.
+
+### Shareable links
+
+- **Filters are in the URL** (`?exam=open&within=7&apply=online&q=audit`), so any filtered
+  view can be shared and survives a reload. Unknown or tampered values fall back to the
+  defaults (`lib/filters.ts`). "Saved only" is left out on purpose: saved posts live in one
+  browser, so a shared link to them would show someone else an empty list.
+- **Each vacancy has its own page** at `/jobs/<id>` with a title and description for link
+  previews (WhatsApp, Telegram, Google). The 🔗 button on every row shares it, using the
+  phone's share sheet when available and copying the link otherwise. Once a post closes it
+  leaves the board and its page returns 404.
+- **`/sitemap.xml` and `/robots.txt`** list every open post. They use
+  `NEXT_PUBLIC_SITE_URL`, or Vercel's production hostname when that is unset — set it once
+  there is a custom domain.
+- No `JobPosting` structured data: the sources give no posting date or description, and
+  incomplete markup is worse than none.
 
 ### Saved jobs and calendar
 

@@ -1,13 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Vacancy } from "@/lib/types";
 import { daysUntil, formatDisplayDate } from "@/lib/dates";
-import { buildIcs } from "@/lib/calendar";
+import {
+  filtersToSearch,
+  parseFilters,
+  type ExamFilter,
+  type WindowFilter,
+} from "@/lib/filters";
+import { Countdown } from "./Countdown";
+import { downloadIcs, ShareButton } from "./JobActions";
 import { useSavedJobs } from "./useSavedJobs";
-
-type ExamFilter = "all" | "any" | "open" | "limited";
-type WindowFilter = 0 | 3 | 7 | 30;
 
 interface Props {
   vacancies: Vacancy[];
@@ -24,6 +28,27 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
   const [onlineOnly, setOnlineOnly] = useState(false);
   const [savedOnly, setSavedOnly] = useState(false);
   const { saved, toggle } = useSavedJobs();
+
+  // Filters live in the URL so a filtered view can be shared. They are read
+  // after mount rather than during render so the server HTML (always unfiltered,
+  // since the page is statically cached) and the first client render match.
+  const [urlRead, setUrlRead] = useState(false);
+
+  useEffect(() => {
+    const f = parseFilters(new URLSearchParams(window.location.search));
+    setQuery(f.q);
+    setExam(f.exam);
+    setWin(f.within);
+    setOnlineOnly(f.online);
+    setUrlRead(true);
+  }, []);
+
+  useEffect(() => {
+    // Do not write until the URL has been read, or the defaults would wipe it.
+    if (!urlRead) return;
+    const search = filtersToSearch({ q: query, exam, within: win, online: onlineOnly });
+    window.history.replaceState(null, "", window.location.pathname + search);
+  }, [urlRead, query, exam, win, onlineOnly]);
 
   const stats = useMemo(() => {
     const dated = vacancies.filter((v) => v.closingDate);
@@ -248,6 +273,7 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
                         📅
                       </button>
                     )}
+                    <ShareButton vacancy={v} />
                     <button
                       type="button"
                       className={`action star${saved.has(v.id) ? " on" : ""}`}
@@ -297,32 +323,6 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
       </footer>
     </>
   );
-}
-
-/** Hand the browser an .ics file; the calendar app takes it from there. */
-function downloadIcs(v: Vacancy): void {
-  const ics = buildIcs(v);
-  if (!ics) return;
-
-  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${v.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50) || "deadline"}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function Countdown({ closingDate, today }: { closingDate: string | null; today: string }) {
-  if (!closingDate) return <span className="countdown none">Check source</span>;
-
-  const d = daysUntil(closingDate, today);
-  if (d <= 0) return <span className="countdown urgent">Closes today</span>;
-  if (d === 1) return <span className="countdown urgent">1 day left</span>;
-  if (d <= 3) return <span className="countdown urgent">{d} days left</span>;
-  if (d <= 7) return <span className="countdown soon">{d} days left</span>;
-  return <span className="countdown ok">{d} days left</span>;
 }
 
 interface Group {
