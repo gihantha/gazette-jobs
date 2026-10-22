@@ -9,6 +9,7 @@
 import { unstable_cache } from "next/cache";
 import { getLastScrapeAt, getOpenVacancies, hasDatabase } from "./db";
 import { scrapeAll } from "./scrape";
+import { enrichApplyLinks } from "./scrape/enrich";
 import { todayInColombo } from "./dates";
 import type { Vacancy } from "./types";
 
@@ -31,7 +32,7 @@ const cachedLiveScrape = unstable_cache(
     const { vacancies, report } = await scrapeAll();
     return { vacancies, finishedAt: report.finishedAt };
   },
-  ["live-scrape-v1"],
+  ["live-scrape-v2"],
   { revalidate: 3600, tags: ["vacancies"] },
 );
 
@@ -58,7 +59,11 @@ export async function getBoard(): Promise<Board> {
   }
 
   try {
-    const { vacancies, finishedAt } = await cachedLiveScrape();
+    const { vacancies: scraped, finishedAt } = await cachedLiveScrape();
+    // Deliberately outside the cache above: per-job apply links must outlive
+    // the "vacancies" tag, which the daily cron invalidates. Nested inside, they
+    // inherit that tag and would be re-fetched from scratch on every refresh.
+    const vacancies = await enrichApplyLinks(scraped);
     return {
       vacancies,
       today,

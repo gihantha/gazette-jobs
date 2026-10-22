@@ -148,6 +148,7 @@ function vacancy(over: Partial<Vacancy>): Vacancy {
     category: null,
     isExam: false,
     examStream: null,
+    applyUrl: null,
     scrapedAt: new Date().toISOString(),
     ...over,
   };
@@ -262,4 +263,33 @@ test("sorts soonest deadline first and undated rows last", () => {
     TODAY,
   );
   assert.deepEqual(vacancies.map((v) => v.id), ["soon", "late", "none"]);
+});
+
+// ------------------------------------------------------------ apply link
+
+import { extractApplyUrl } from "../lib/scrape/applyUrl";
+
+const PAGE = "https://job.govdoc.lk/lecturer-ousl-9476";
+
+test("finds the external Apply button", () => {
+  const html = `<nav><a href="https://job.govdoc.lk/cv-format">Model Applications</a></nav>
+    <a class="btn" href="https://forms.example.lk/apply?id=1">
+      Apply
+    </a>`;
+  assert.equal(extractApplyUrl(html, PAGE), "https://forms.example.lk/apply?id=1");
+});
+
+test("returns null when the page has no Apply link", () => {
+  const html = `<a href="https://job.govdoc.lk/cv-format">Model Applications &amp; CV Formats</a>`;
+  assert.equal(extractApplyUrl(html, PAGE), null);
+});
+
+test("ignores Apply links back into the same site and non-web links", () => {
+  const html = `<a href="/jobs">Apply</a><a href="mailto:hr@example.lk">Apply</a>`;
+  assert.equal(extractApplyUrl(html, PAGE), null);
+});
+
+test("does not treat 'Applications' text as an Apply button", () => {
+  const html = `<a href="https://elsewhere.test/">Download Applications</a>`;
+  assert.equal(extractApplyUrl(html, PAGE), null);
 });

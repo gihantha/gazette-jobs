@@ -22,6 +22,11 @@ export interface Vacancy {
   isExam: boolean;
   /** "open" | "limited" | null — parsed from the title where stated. */
   examStream: ExamStream;
+  /**
+   * Direct online-application link, when the source's detail page has one.
+   * Null means "unknown" — not "apply by post".
+   */
+  applyUrl: string | null;
   /** When this row was last seen by a scrape run (ISO timestamp). */
   scrapedAt: string;
 }

@@ -3,9 +3,13 @@
 A self-updating board of Sri Lankan government vacancies that **automatically hides
 anything whose application deadline has passed**.
 
-Scrapes two gazette aggregators three times a day, normalises and de-duplicates the
-results, flags open vs limited competitive examinations, and serves the live list as
-a web page and a JSON API.
+Scrapes two gazette aggregators daily, normalises and de-duplicates the results, flags
+open vs limited competitive examinations, marks posts that have a direct online
+application link, and serves the live list as a web page and a JSON API.
+
+> **This deployment runs on Vercel only — no database.** There is no budget for one, so
+> `DATABASE_URL` is left unset and everything is served from a live scrape held in
+> Vercel's built-in data cache. The Postgres code in `lib/db.ts` is optional and unused.
 
 ```
 197 open vacancies · 115 closing within 7 days · 22 open competitive exams
@@ -28,7 +32,7 @@ Useful commands:
 ```bash
 npm run scrape          # scrape once, print a report, touch nothing
 npm run scrape -- --json # dump the normalised vacancies as JSON
-npm test                # 27 tests over the date, exam and dedupe logic
+npm test                # 31 tests over the date, exam, dedupe and apply-link logic
 npm run typecheck
 ```
 
@@ -37,18 +41,19 @@ npm run typecheck
 ## How it works
 
 ```
-Vercel Cron (3x daily)
+Vercel Cron (once daily, 06:30 Colombo)
    └─> GET /api/cron/scrape
          ├─ scrape governmentjobs.lk   (1 request, ?ipp=All)
          ├─ scrape job.govdoc.lk       (paginated, stops when pages run dry)
          ├─ normalise + dedupe + drop expired
-         ├─ upsert into Postgres
-         └─ revalidateTag("vacancies")
+         └─ revalidateTag("vacancies")   -> expires the cached live scrape
 
-Page load
+Page load (cached for 30 min)
    └─> getBoard()
-         ├─ Postgres (fast path, ~10ms)
-         └─ live scrape fallback if no DB / DB empty / DB down
+         ├─ live scrape            (Vercel data cache, refreshed after the cron)
+         └─ enrichApplyLinks()     (per-job cache, max 20 new fetches per refresh)
+
+With DATABASE_URL set (not used in this deployment), getBoard() reads Postgres first.
 ```
 
 ### Deciding what has expired
@@ -78,6 +83,22 @@ or more significant words). A **region veto** keeps `Central` / `Southern` /
 gazette closing date, so without it two separate provincial recruitments collapse into
 one. Covered by tests.
 
+### Apply-online links
+
+The listing pages do not say how to apply. Only some `job.govdoc.lk` **detail** pages have
+an external "Apply" button, so `lib/scrape/enrich.ts` fetches those pages and stores the
+link as `applyUrl`. The UI shows an "Apply online" chip and filter for them.
+
+- **No `applyUrl` means unknown, not "apply by post".** Neither source reliably states
+  registered post or email; governmentjobs.lk publishes its notice only as an image, so it
+  never gets a link. Do not infer a method from a missing link.
+- **No database, so results live in Vercel's data cache**, one entry per job for 3 days.
+  A cold cache would need ~150 throttled requests, so each refresh fetches at most 20 new
+  detail pages, soonest deadline first. Coverage therefore fills in over the first few
+  refreshes after a deploy (~35 s per refresh, inside the 60 s `maxDuration`).
+- The enrichment runs *outside* the tagged `vacancies` cache on purpose: inside it, the
+  daily `revalidateTag` would also discard every stored link.
+
 ### Open vs limited exams
 
 `classifyExam()` reads the stream out of the title: `(Open)` → open competitive exam
@@ -89,24 +110,16 @@ public officers. The board filters on this.
 ## Deploying to Vercel
 
 1. **Push to GitHub**, then import the repo at [vercel.com/new](https://vercel.com/new).
-2. **Add a database** — in the project, *Storage → Create → Postgres (Neon)*. Vercel
-   injects `DATABASE_URL` automatically. *(Optional: skip it and the site still works,
-   just slower.)*
+2. **Do not add a database.** Leave `DATABASE_URL` unset; the site runs on the live
+   scrape and Vercel's data cache. *(If a budget appears later, Storage → Postgres
+   (Neon) injects `DATABASE_URL` and `lib/db.ts` takes over.)*
 3. **Set `CRON_SECRET`** under *Settings → Environment Variables* to any long random
    string. Vercel sends it as a bearer token on cron calls; without it, anyone can
    trigger a crawl of the upstream sites.
-4. **Deploy.** `vercel.json` registers the cron at `0 1,7,13 * * *` UTC — 06:30, 12:30
-   and 18:30 Colombo time.
-5. **Seed the first run** by visiting `/api/cron/scrape` once (or wait for the first
-   cron). The schema is created automatically on that call.
-
-Local development against the real database:
-
-```bash
-vercel env pull .env.local
-npm run db:init
-npm run scrape -- --save
-```
+4. **Deploy.** `vercel.json` registers the cron at `0 1 * * *` UTC (06:30 Colombo) — the
+   most the Hobby plan allows.
+5. **Warm it up** by opening the site once. The first load runs the scrape and takes
+   ~40 s; after that visitors get the cached page.
 
 ---
 
@@ -118,6 +131,7 @@ npm run scrape -- --save
 | `GET /api/jobs?exam=open` | open competitive exams only |
 | `GET /api/jobs?exam=limited` | limited / departmental exams |
 | `GET /api/jobs?exam=any` | anything flagged as an exam |
+| `GET /api/jobs?apply=online` | only posts with a direct application link |
 | `GET /api/jobs?within=7` | closing within 7 days |
 | `GET /api/jobs?q=customs` | substring match on post or institution |
 
@@ -135,6 +149,7 @@ npm run scrape -- --save
       "closingDate": "2026-11-12",
       "isExam": true,
       "examStream": "open",
+      "applyUrl": null, // direct application link, when the listing page has one
       "url": "https://job.govdoc.lk/audit-officer-open-audit-service-commission-9412"
       // …
     }
@@ -192,6 +207,8 @@ lib/
   types.ts
   scrape/
     index.ts            orchestrator
+    enrich.ts           per-job apply links, cached in Vercel's data cache
+    applyUrl.ts         pulls the "Apply" link out of a detail page
     http.ts             throttled fetch
     normalize.ts        exam detection, dedupe, sorting
     sources/*.ts        one adapter per site

@@ -167,6 +167,7 @@ export async function getOpenVacancies(today: string): Promise<Vacancy[]> {
     category: r.category,
     isExam: r.is_exam,
     examStream: r.exam_stream as Vacancy["examStream"],
+    applyUrl: null, // not persisted; this deployment runs without a database
     scrapedAt: r.scraped_at.toISOString(),
   }));
 }

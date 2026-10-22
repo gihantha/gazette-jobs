@@ -8,6 +8,10 @@ import { JobBoard } from "./JobBoard";
  */
 export const revalidate = 1800;
 
+// With no database, a cache refresh re-scrapes the sources and fetches some
+// detail pages, which needs more than the 10s default. 60s is allowed on Hobby.
+export const maxDuration = 60;
+
 export default async function Page() {
   const board = await getBoard();
 

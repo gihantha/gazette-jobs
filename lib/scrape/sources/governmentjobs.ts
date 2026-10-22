@@ -108,6 +108,7 @@ export async function scrapeGovernmentJobs(): Promise<ScrapeResult> {
       category: null,
       isExam,
       examStream,
+      applyUrl: null, // the notice is an image; no text to read a link from
       scrapedAt,
     });
   });

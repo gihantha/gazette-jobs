@@ -373,6 +373,11 @@ a {
   color: var(--accent);
 }
 
+.chip.apply {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
 .chip.limited {
   background: var(--surface-2);
   color: var(--text-muted);

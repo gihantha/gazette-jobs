@@ -19,6 +19,7 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
   const [query, setQuery] = useState("");
   const [exam, setExam] = useState<ExamFilter>("all");
   const [win, setWin] = useState<WindowFilter>(0);
+  const [onlineOnly, setOnlineOnly] = useState(false);
 
   const stats = useMemo(() => {
     const dated = vacancies.filter((v) => v.closingDate);
@@ -37,6 +38,8 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
       if (exam === "open" && v.examStream !== "open") return false;
       if (exam === "limited" && v.examStream !== "limited") return false;
 
+      if (onlineOnly && !v.applyUrl) return false;
+
       if (win > 0) {
         if (!v.closingDate) return false;
         if (daysUntil(v.closingDate, today) > win) return false;
@@ -48,7 +51,7 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
       }
       return true;
     });
-  }, [vacancies, query, exam, win, today]);
+  }, [vacancies, query, exam, win, onlineOnly, today]);
 
   const groups = useMemo(() => groupByUrgency(filtered, today), [filtered, today]);
 
@@ -151,6 +154,15 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
             </button>
           ))}
         </div>
+
+        <div className="segmented" role="group" aria-label="Filter by application method">
+          <button type="button" aria-pressed={!onlineOnly} onClick={() => setOnlineOnly(false)}>
+            Any method
+          </button>
+          <button type="button" aria-pressed={onlineOnly} onClick={() => setOnlineOnly(true)}>
+            Apply online
+          </button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -184,6 +196,7 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
                       {v.examStream === "limited" && (
                         <span className="chip limited">Limited</span>
                       )}
+                      {v.applyUrl && <span className="chip apply">Apply online</span>}
                     </div>
                   </div>
                   <div className="row-side">
@@ -211,8 +224,12 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
           <a href="https://job.govdoc.lk/" target="_blank" rel="noopener noreferrer">
             job.govdoc.lk
           </a>
-          . Refreshed automatically three times a day
+          . Refreshed automatically every day
           {mode === "live-scrape" ? " (currently served live)" : ""}.
+        </p>
+        <p>
+          &ldquo;Apply online&rdquo; appears only when the listing page has an application link.
+          Posts without it may still accept online applications — check the notice.
         </p>
         <p>
           These are third-party aggregators, not the official gazette. Always confirm the

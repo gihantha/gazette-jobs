@@ -143,6 +143,7 @@ export async function scrapeGovdoc(): Promise<ScrapeResult> {
         category,
         isExam,
         examStream,
+        applyUrl: null, // detail-page only; filled in by enrichApplyLinks
         scrapedAt,
       });
 
