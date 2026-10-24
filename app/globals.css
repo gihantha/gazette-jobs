@@ -319,6 +319,12 @@ a {
   font-size: 17px;
   line-height: 1;
   padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Comfortable tap target on a phone. */
+  min-width: 36px;
+  min-height: 36px;
 }
 
 .action:hover {
@@ -496,13 +502,20 @@ footer.site a:hover {
   .meta {
     text-align: left;
   }
+  /* Stack the buttons under the text; beside it they squeeze long titles to one
+     word per line. */
   .row {
-    grid-template-columns: 1fr auto;
-    gap: 6px;
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
   .row-link {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+  .row-actions {
+    min-width: 0;
+    justify-content: flex-start;
+    margin-left: -8px;
   }
   .row-side {
     text-align: left;
@@ -584,6 +597,9 @@ footer.site a:hover {
   font-size: 14px;
   padding: 8px 14px;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .btn:hover {

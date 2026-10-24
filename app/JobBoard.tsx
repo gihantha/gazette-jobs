@@ -10,7 +10,7 @@ import {
   type WindowFilter,
 } from "@/lib/filters";
 import { Countdown } from "./Countdown";
-import { downloadIcs, ShareButton } from "./JobActions";
+import { CalendarIcon, downloadIcs, ShareButton } from "./JobActions";
 import { useSavedJobs } from "./useSavedJobs";
 
 interface Props {
@@ -270,7 +270,7 @@ export function JobBoard({ vacancies, today, lastUpdated, mode, degraded }: Prop
                         aria-label={`Add the ${v.title} deadline to your calendar`}
                         title="Add deadline to calendar"
                       >
-                        📅
+                        <CalendarIcon />
                       </button>
                     )}
                     <ShareButton vacancy={v} />
